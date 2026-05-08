@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MediChat — AI Medical Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --white:       #ffffff;
+      --gray-50:     #f8fafc;
+      --gray-100:    #f1f5f9;
+      --gray-200:    #e2e8f0;
+      --gray-300:    #cbd5e1;
+      --gray-400:    #94a3b8;
+      --gray-500:    #64748b;
+      --gray-600:    #475569;
+      --gray-700:    #334155;
+      --gray-800:    #1e293b;
+      --gray-900:    #0f172a;
+
+      --teal-50:     #f0fdfa;
+      --teal-100:    #ccfbf1;
+      --teal-200:    #99f6e4;
+      --teal-400:    #2dd4bf;
+      --teal-500:    #14b8a6;
+      --teal-600:    #0d9488;
+      --teal-700:    #0f766e;
+      --teal-800:    #115e59;
+
+      --blue-50:     #eff6ff;
+      --blue-100:    #dbeafe;
+      --blue-500:    #3b82f6;
+      --blue-600:    #2563eb;
+
+      --red-50:      #fef2f2;
+      --red-400:     #f87171;
+      --red-500:     #ef4444;
+      --red-600:     #dc2626;
+
+      --font:        'Inter', -apple-system, sans-serif;
+      --mono:        'IBM Plex Mono', monospace;
+      --radius-sm:   6px;
+      --radius-md:   10px;
+      --radius-lg:   16px;
+      --radius-xl:   24px;
+      --shadow-sm:   0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md:   0 4px 16px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+      --shadow-lg:   0 12px 40px rgba(0,0,0,0.10), 0 4px 12px rgba(0,0,0,0.05);
+    }
+
+    html, body {
+      height: 100%;
+      font-family: var(--font);
+      background: var(--gray-50);
+      color: var(--gray-800);
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Layout Shell ── */
+    .shell {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      background: var(--white);
+      border-right: 1px solid var(--gray-200);
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .sidebar-header {
+      padding: 24px 20px 20px;
+      border-bottom: 1px solid var(--gray-100);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+
+    .logo-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--teal-500), var(--teal-700));
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .logo-icon svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: white;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .logo-text {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--gray-900);
+      letter-spacing: -0.3px;
+    }
+
+    .logo-sub {
+      font-size: 11px;
+      color: var(--gray-400);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    /* Language selector */
+    .lang-section {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--gray-100);
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--gray-400);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 10px;
+    }
+
+    .lang-options {
+      display: flex;
+      gap: 6px;
+    }
+
+    .lang-btn {
+      flex: 1;
+      padding: 7px 10px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius-sm);
+      background: var(--white);
+      color: var(--gray-500);
+      font-size: 12px;
+      font-weight: 500;
+      font-family: var(--font);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: center;
+    }
+
+    .lang-btn:hover {
+      border-color: var(--teal-400);
+      color: var(--teal-600);
+      background: var(--teal-50);
+    }
+
+    .lang-btn.active {
+      background: var(--teal-500);
+      border-color: var(--teal-500);
+      color: var(--white);
+    }
+
+    /* Quick topics */
+    .topics-section {
+      padding: 16px 20px;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .topic-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 9px 12px;
+      margin-bottom: 4px;
+      background: none;
+      border: 1px solid transparent;
+      border-radius: var(--radius-md);
+      color: var(--gray-600);
+      font-size: 13px;
+      font-family: var(--font);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: left;
+    }
+
+    .topic-chip:hover {
+      background: var(--gray-50);
+      border-color: var(--gray-200);
+      color: var(--gray-800);
+    }
+
+    .topic-chip .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* Sidebar footer */
+    .sidebar-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--gray-100);
+    }
+
+    .disclaimer {
+      background: var(--teal-50);
+      border: 1px solid var(--teal-100);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      font-size: 11px;
+      color: var(--teal-700);
+      line-height: 1.5;
+    }
+
+    .disclaimer strong {
+      display: block;
+      margin-bottom: 2px;
+      font-weight: 600;
+    }
+
+    /* ── Main Chat Area ── */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--gray-50);
+    }
+
+    /* Top bar */
+    .topbar {
+      padding: 16px 28px;
+      background: var(--white);
+      border-bottom: 1px solid var(--gray-200);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .topbar-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--gray-800);
+    }
+
+    .topbar-subtitle {
+      font-size: 12px;
+      color: var(--gray-400);
+      margin-top: 1px;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      background: var(--teal-50);
+      border: 1px solid var(--teal-100);
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--teal-700);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      background: var(--teal-500);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* Messages */
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      scroll-behavior: smooth;
+    }
+
+    .messages::-webkit-scrollbar { width: 4px; }
+    .messages::-webkit-scrollbar-track { background: transparent; }
+    .messages::-webkit-scrollbar-thumb { background: var(--gray-200); border-radius: 99px; }
+
+    /* Welcome state */
+    .welcome {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      text-align: center;
+      padding: 40px;
+      gap: 16px;
+    }
+
+    .welcome-icon {
+      width: 64px;
+      height: 64px;
+      background: linear-gradient(135deg, var(--teal-400), var(--teal-600));
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(14,184,166,0.25);
+    }
+
+    .welcome-icon svg {
+      width: 32px; height: 32px;
+      fill: none; stroke: white;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .welcome h2 {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--gray-900);
+      letter-spacing: -0.4px;
+    }
+
+    .welcome p {
+      font-size: 14px;
+      color: var(--gray-400);
+      max-width: 360px;
+      line-height: 1.7;
+    }
+
+    .welcome-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 8px;
+    }
+
+    .welcome-chip {
+      padding: 8px 16px;
+      border: 1px solid var(--gray-200);
+      border-radius: 99px;
+      background: var(--white);
+      color: var(--gray-600);
+      font-size: 13px;
+      font-family: var(--font);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .welcome-chip:hover {
+      border-color: var(--teal-400);
+      color: var(--teal-700);
+      background: var(--teal-50);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(14,184,166,0.15);
+    }
+
+    /* Message bubbles */
+    .msg-row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      animation: slideUp 0.25s ease;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .msg-row.user {
+      flex-direction: row-reverse;
+    }
+
+    .avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .avatar.bot {
+      background: linear-gradient(135deg, var(--teal-400), var(--teal-600));
+      color: white;
+    }
+
+    .avatar.user {
+      background: var(--gray-800);
+      color: white;
+    }
+
+    .bubble {
+      max-width: 72%;
+      padding: 13px 16px;
+      border-radius: var(--radius-lg);
+      font-size: 14px;
+      line-height: 1.7;
+      position: relative;
+    }
+
+    .bubble.bot {
+      background: var(--white);
+      border: 1px solid var(--gray-200);
+      border-top-left-radius: var(--radius-sm);
+      color: var(--gray-800);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .bubble.user {
+      background: var(--gray-900);
+      color: var(--white);
+      border-top-right-radius: var(--radius-sm);
+    }
+
+    .bubble-time {
+      font-size: 10px;
+      color: var(--gray-400);
+      margin-top: 5px;
+      padding: 0 4px;
+    }
+
+    .msg-row.user .bubble-time {
+      text-align: right;
+    }
+
+    /* Suggestion chips inside message */
+    .sug-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .sug-btn {
+      padding: 8px 14px;
+      background: var(--teal-50);
+      border: 1px solid var(--teal-200);
+      border-radius: var(--radius-sm);
+      color: var(--teal-700);
+      font-size: 13px;
+      font-weight: 500;
+      font-family: var(--font);
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sug-btn::before {
+      content: "→";
+      font-size: 12px;
+      color: var(--teal-500);
+    }
+
+    .sug-btn:hover {
+      background: var(--teal-500);
+      border-color: var(--teal-500);
+      color: white;
+    }
+
+    .sug-btn:hover::before {
+      color: white;
+    }
+
+    /* Typing indicator */
+    .typing {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 14px 16px;
+    }
+
+    .typing span {
+      width: 7px; height: 7px;
+      background: var(--gray-300);
+      border-radius: 50%;
+      animation: bounce 1.2s infinite;
+    }
+
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); background: var(--gray-300); }
+      40% { transform: translateY(-6px); background: var(--teal-400); }
+    }
+
+    /* ── Input bar ── */
+    .input-bar {
+      padding: 16px 28px 20px;
+      background: var(--white);
+      border-top: 1px solid var(--gray-200);
+      flex-shrink: 0;
+    }
+
+    .input-wrapper {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      background: var(--gray-50);
+      border: 1.5px solid var(--gray-200);
+      border-radius: var(--radius-xl);
+      padding: 10px 12px 10px 18px;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .input-wrapper:focus-within {
+      border-color: var(--teal-400);
+      box-shadow: 0 0 0 3px rgba(45,212,191,0.12);
+      background: var(--white);
+    }
+
+    #user-input {
+      flex: 1;
+      border: none;
+      background: none;
+      outline: none;
+      font-family: var(--font);
+      font-size: 14px;
+      color: var(--gray-800);
+      resize: none;
+      min-height: 24px;
+      max-height: 120px;
+      line-height: 1.6;
+    }
+
+    #user-input::placeholder { color: var(--gray-400); }
+
+    .send-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: var(--teal-500);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+      box-shadow: 0 2px 8px rgba(14,184,166,0.3);
+    }
+
+    .send-btn:hover { background: var(--teal-600); transform: scale(1.05); }
+    .send-btn:active { transform: scale(0.97); }
+
+    .send-btn:disabled {
+      background: var(--gray-200);
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .send-btn svg {
+      width: 16px; height: 16px;
+      fill: none; stroke: white;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .input-hint {
+      text-align: center;
+      font-size: 11px;
+      color: var(--gray-300);
+      margin-top: 10px;
+    }
+
+    /* ── Source tag on messages ── */
+    .source-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      background: var(--teal-50);
+      border: 1px solid var(--teal-100);
+      border-radius: 99px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--teal-700);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 8px;
+    }
+
+    /* ── Prose formatting inside bot bubble ── */
+    .bubble.bot p { margin-bottom: 8px; }
+    .bubble.bot p:last-child { margin-bottom: 0; }
+    .bubble.bot ul, .bubble.bot ol { padding-left: 18px; margin: 6px 0; }
+    .bubble.bot li { margin-bottom: 4px; }
+    .bubble.bot strong { font-weight: 600; color: var(--gray-900); }
+    .bubble.bot em { color: var(--gray-500); font-style: italic; }
+
+    /* ── Error state ── */
+    .bubble.error {
+      background: var(--red-50);
+      border-color: #fecaca;
+      color: var(--red-600);
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .messages { padding: 16px; }
+      .input-bar { padding: 12px 16px 16px; }
+      .topbar { padding: 12px 16px; }
+      .bubble { max-width: 88%; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+        </div>
+        <div>
+          <div class="logo-text">MediChat</div>
+          <div class="logo-sub">RAG · Llama 3 · FAISS</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lang-section">
+      <div class="section-label">Ngôn ngữ</div>
+      <div class="lang-options">
+        <button class="lang-btn active" data-lang="Auto">Auto</button>
+        <button class="lang-btn" data-lang="Vietnamese">Tiếng Việt</button>
+        <button class="lang-btn" data-lang="English">English</button>
+      </div>
+    </div>
+
+    <div class="topics-section">
+      <div class="section-label">Gợi ý tra cứu</div>
+      <button class="topic-chip" onclick="sendQuickQuery('Triệu chứng cảm cúm')">
+        <span class="dot" style="background:#f59e0b"></span>Cảm cúm
+      </button>
+      <button class="topic-chip" onclick="sendQuickQuery('Bệnh tiểu đường type 2')">
+        <span class="dot" style="background:#ef4444"></span>Tiểu đường
+      </button>
+      <button class="topic-chip" onclick="sendQuickQuery('Tăng huyết áp')">
+        <span class="dot" style="background:#8b5cf6"></span>Tăng huyết áp
+      </button>
+      <button class="topic-chip" onclick="sendQuickQuery('Viêm phổi')">
+        <span class="dot" style="background:#3b82f6"></span>Viêm phổi
+      </button>
+      <button class="topic-chip" onclick="sendQuickQuery('Đau đầu migraine')">
+        <span class="dot" style="background:#14b8a6"></span>Migraine
+      </button>
+      <button class="topic-chip" onclick="sendQuickQuery('Viêm loét dạ dày')">
+        <span class="dot" style="background:#10b981"></span>Viêm dạ dày
+      </button>
+      <button class="topic-chip" onclick="sendQuickQuery('Dị ứng')">
+        <span class="dot" style="background:#f97316"></span>Dị ứng
+      </button>
+      <button class="topic-chip" onclick="sendQuickQuery('Sốt xuất huyết')">
+        <span class="dot" style="background:#ec4899"></span>Sốt xuất huyết
+      </button>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="disclaimer">
+        <strong>⚠️ Lưu ý quan trọng</strong>
+        Thông tin chỉ mang tính tham khảo. Vui lòng tham khảo bác sĩ để được chẩn đoán chính xác.
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="topbar-title">Trợ lý Y tế AI</div>
+        <div class="topbar-subtitle">Powered by Llama 3.1 · FAISS · Sentence Transformers</div>
+      </div>
+      <div class="status-badge">
+        <span class="status-dot"></span>Online
+      </div>
+    </div>
+
+    <div class="messages" id="messages">
+      <!-- Welcome screen -->
+      <div class="welcome" id="welcome">
+        <div class="welcome-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <h2>Xin chào! Tôi có thể giúp gì?</h2>
+        <p>Hãy nhập triệu chứng hoặc tên bệnh bạn muốn tìm hiểu. Tôi sẽ tra cứu từ cơ sở dữ liệu y tế và trả lời bằng AI.</p>
+        <div class="welcome-chips">
+          <button class="welcome-chip" onclick="sendQuickQuery('Triệu chứng cảm cúm là gì?')">🤧 Cảm cúm</button>
+          <button class="welcome-chip" onclick="sendQuickQuery('Bệnh tiểu đường có triệu chứng gì?')">🩸 Tiểu đường</button>
+          <button class="welcome-chip" onclick="sendQuickQuery('Cách phòng ngừa tăng huyết áp')">❤️ Huyết áp</button>
+          <button class="welcome-chip" onclick="sendQuickQuery('Sốt xuất huyết nguy hiểm không?')">🦟 Sốt xuất huyết</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <div class="input-wrapper">
+        <textarea
+          id="user-input"
+          rows="1"
+          placeholder="Nhập triệu chứng hoặc tên bệnh... (Enter để gửi)"
+        ></textarea>
+        <button class="send-btn" id="send-btn" onclick="sendMessage()">
+          <svg viewBox="0 0 24 24">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+      <p class="input-hint">Enter để gửi · Shift+Enter xuống dòng · Dữ liệu không được lưu trữ</p>
+    </div>
+  </main>
+
+</div>
+
+<script>
+  let langMode = 'Auto';
+  const messagesEl = document.getElementById('messages');
+  const inputEl = document.getElementById('user-input');
+  const sendBtn = document.getElementById('send-btn');
+  const welcomeEl = document.getElementById('welcome');
+
+  // Language buttons
+  document.querySelectorAll('.lang-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      langMode = btn.dataset.lang;
+    });
+  });
+
+  // Auto-resize textarea
+  inputEl.addEventListener('input', () => {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+  });
+
+  // Enter to send
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  function getTime() {
+    return new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function hideWelcome() {
+    if (welcomeEl) welcomeEl.style.display = 'none';
+  }
+
+  function appendUserMessage(text) {
+    hideWelcome();
+    const row = document.createElement('div');
+    row.className = 'msg-row user';
+    row.innerHTML = `
+      <div>
+        <div class="bubble user">${escapeHtml(text)}</div>
+        <div class="bubble-time">${getTime()}</div>
+      </div>
+      <div class="avatar user">U</div>
+    `;
+    messagesEl.appendChild(row);
+    scrollToBottom();
+  }
+
+  function appendBotMessage(html, isError = false) {
+    const row = document.createElement('div');
+    row.className = 'msg-row bot';
+    row.innerHTML = `
+      <div class="avatar bot">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      <div>
+        <div class="bubble bot ${isError ? 'error' : ''}">
+          ${isError ? '' : '<span class="source-tag">RAG · Llama 3</span>'}
+          ${html}
+        </div>
+        <div class="bubble-time">${getTime()}</div>
+      </div>
+    `;
+    messagesEl.appendChild(row);
+    scrollToBottom();
+    return row;
+  }
+
+  function appendTyping() {
+    hideWelcome();
+    const row = document.createElement('div');
+    row.className = 'msg-row bot';
+    row.id = 'typing-indicator';
+    row.innerHTML = `
+      <div class="avatar bot">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      <div class="bubble bot">
+        <div class="typing"><span></span><span></span><span></span></div>
+      </div>
+    `;
+    messagesEl.appendChild(row);
+    scrollToBottom();
+  }
+
+  function removeTyping() {
+    const el = document.getElementById('typing-indicator');
+    if (el) el.remove();
+  }
+
+  function scrollToBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function formatBotText(text) {
+    // Convert newlines to paragraphs
+    return text.split('\n\n').map(para => {
+      const trimmed = para.trim();
+      if (!trimmed) return '';
+      // Convert markdown-like bold
+      const formatted = trimmed
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/\n/g, '<br>');
+      return `<p>${formatted}</p>`;
+    }).join('');
+  }
+
+  async function sendMessage(overrideText) {
+    const text = (overrideText || inputEl.value).trim();
+    if (!text) return;
+
+    inputEl.value = '';
+    inputEl.style.height = 'auto';
+    sendBtn.disabled = true;
+
+    appendUserMessage(text);
+    appendTyping();
+
+    try {
+      const res = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, lang_mode: langMode })
+      });
+      const data = await res.json();
+      removeTyping();
+
+      if (data.type === 'answer') {
+        appendBotMessage(formatBotText(data.text));
+      } else if (data.type === 'suggestions') {
+        const sugHtml = `
+          <p>${escapeHtml(data.text)}</p>
+          <div class="sug-list">
+            ${data.suggestions.map(s =>
+              `<button class="sug-btn" onclick="sendQuickQuery('${escapeHtml(s)}')">${escapeHtml(s)}</button>`
+            ).join('')}
+          </div>
+        `;
+        appendBotMessage(sugHtml);
+      } else {
+        appendBotMessage(escapeHtml(data.text || 'Có lỗi xảy ra.'), true);
+      }
+    } catch (err) {
+      removeTyping();
+      appendBotMessage('Không thể kết nối tới server. Vui lòng thử lại.', true);
+    }
+
+    sendBtn.disabled = false;
+    inputEl.focus();
+  }
+
+  function sendQuickQuery(text) {
+    inputEl.value = text;
+    sendMessage();
+  }
+</script>
+
+</body>
+</html>

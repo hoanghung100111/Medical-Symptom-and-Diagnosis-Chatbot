@@ -1,8 +1,9 @@
-streamlit
-faiss-cpu
-sentence-transformers
-requests
-unidecode 
-rapidfuzz
-groq
-deep_translator
+flask>=3.0.0
+groq>=0.9.0
+faiss-cpu>=1.8.0
+sentence-transformers>=3.0.0
+rapidfuzz>=3.6.0
+python-dotenv>=1.0.0
+numpy>=1.26.0
+scikit-learn>=1.4.0
+gunicorn>=22.0.0
