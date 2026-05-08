@@ -899,24 +899,93 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, lang_mode: langMode })
       });
-      const data = await res.json();
+
+      if (!res.ok) throw new Error('Server error');
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let   buffer  = '';
+      let   botRow  = null;
+      let   rawText = '';
+
       removeTyping();
 
-      if (data.type === 'answer') {
-        appendBotMessage(formatBotText(data.text));
-      } else if (data.type === 'suggestions') {
-        const sugHtml = `
-          <p>${escapeHtml(data.text)}</p>
-          <div class="sug-list">
-            ${data.suggestions.map(s =>
-              `<button class="sug-btn" onclick="sendQuickQuery('${escapeHtml(s)}')">${escapeHtml(s)}</button>`
-            ).join('')}
-          </div>
-        `;
-        appendBotMessage(sugHtml);
-      } else {
-        appendBotMessage(escapeHtml(data.text || 'Có lỗi xảy ra.'), true);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete line
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let payload;
+          try { payload = JSON.parse(line.slice(6)); } catch { continue; }
+
+          // Suggestions (no stream)
+          if (payload.suggestions) {
+            const sugHtml = `
+              <p>Mình chưa xác định chính xác. Bạn muốn nói đến bệnh nào?</p>
+              <div class="sug-list">
+                ${payload.suggestions.map(s =>
+                  `<button class="sug-btn" onclick="sendQuickQuery('${escapeHtml(s)}')">${escapeHtml(s)}</button>`
+                ).join('')}
+              </div>`;
+            appendBotMessage(sugHtml);
+            sendBtn.disabled = false;
+            inputEl.focus();
+            return;
+          }
+
+          // Error
+          if (payload.error) {
+            appendBotMessage(escapeHtml(payload.error), true);
+            sendBtn.disabled = false;
+            inputEl.focus();
+            return;
+          }
+
+          // Token stream
+          if (payload.token !== undefined) {
+            rawText += payload.token;
+            if (!botRow) {
+              // Tạo bubble lần đầu
+              botRow = document.createElement('div');
+              botRow.className = 'msg-row bot';
+              botRow.innerHTML = `
+                <div class="avatar bot">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                  </svg>
+                </div>
+                <div>
+                  <div class="bubble bot">
+                    <span class="source-tag">RAG · Llama 3</span>
+                    <div class="stream-content"></div>
+                  </div>
+                  <div class="bubble-time">${getTime()}</div>
+                </div>`;
+              messagesEl.appendChild(botRow);
+            }
+            // Update nội dung stream
+            const contentEl = botRow.querySelector('.stream-content');
+            contentEl.innerHTML = formatBotText(rawText);
+            scrollToBottom();
+          }
+
+          // Done — finalize
+          if (payload.done) {
+            if (payload.cached && botRow) {
+              // Thêm cache badge
+              const bubble = botRow.querySelector('.bubble.bot');
+              const tag = bubble.querySelector('.source-tag');
+              if (tag) tag.textContent = '⚡ Cached · Llama 3';
+            }
+          }
+        }
       }
+
     } catch (err) {
       removeTyping();
       appendBotMessage('Không thể kết nối tới server. Vui lòng thử lại.', true);
