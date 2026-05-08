@@ -49,18 +49,38 @@ client   = Groq(api_key=config.GROQ_API_KEY)
 embedder = SentenceTransformer(config.EMBED_MODEL)
 index    = faiss.read_index(config.FAISS_INDEX_PATH)
 
+# ════════════════════════════════════════════════════════════
+# PATCH: Load chunked data thay vì full_data
+# Chunked data: mỗi entry là 1 chunk (1 chủ đề) của 1 bệnh
+# Keys: chunk_id, disease_name, synonyms, label, label_vi, text, embed_text, reference
+# ════════════════════════════════════════════════════════════
 with open(config.KNOWLEDGE_PATH, "r", encoding="utf-8") as f:
-    full_data = json.load(f)
+    full_data = json.load(f)  # full_data giờ là list of chunks
 
-id2doc        = {i: doc for i, doc in enumerate(full_data)}
-all_doc_names = [normalize_text(d.get("main_name", "")) for d in full_data]
-_N            = len(full_data)
-logger.info(f"Loaded {_N} documents.")
+# PATCH: id2doc → id2chunk (index trong FAISS tương ứng với chunk, không phải doc)
+id2doc = {i: chunk for i, chunk in enumerate(full_data)}
+_N     = len(full_data)
+logger.info(f"Loaded {_N} chunks.")
+
+# PATCH: Group chunks theo disease_name để fuzzy_lookup và prepare_context dùng
+# chunks_by_disease: { disease_name: [chunk, chunk, ...] }
+chunks_by_disease: dict[str, list] = defaultdict(list)
+for chunk in full_data:
+    chunks_by_disease[chunk["disease_name"]].append(chunk)
+
+# List tên bệnh duy nhất (dùng cho fuzzy lookup)
+all_disease_names = list(chunks_by_disease.keys())
+logger.info(f"Unique diseases: {len(all_disease_names)}")
+
+# PATCH: all_doc_names dùng disease_name thay vì main_name
+all_doc_names = [normalize_text(name) for name in all_disease_names]
 
 # ── BM25 ─────────────────────────────────────────────────────
+# PATCH: Corpus tokens build từ chunk["text"] thay vì knowledge_text
+# Mỗi chunk là 1 document BM25 độc lập → BM25 tìm đúng chunk theo chủ đề
 _corpus_tokens = [
-    _tokenize(d.get("knowledge_text", "") + " " + d.get("main_name", ""))
-    for d in full_data
+    _tokenize(chunk.get("text", "") + " " + chunk.get("disease_name", ""))
+    for chunk in full_data
 ]
 _df = defaultdict(int)
 for tokens in _corpus_tokens:
@@ -87,10 +107,9 @@ logger.info("BM25 index built.")
 # ════════════════════════════════════════════════════════════
 # SEMANTIC CACHE
 # ════════════════════════════════════════════════════════════
-# Lưu (query_embedding, answer) — cosine sim >= threshold thì cache hit
-_CACHE_EMBEDDINGS: list = []   # list of np.ndarray (normalized)
-_CACHE_ANSWERS:    list = []   # list of str
-_CACHE_THRESHOLD   = 0.92      # cao để chỉ hit khi query thực sự giống nhau
+_CACHE_EMBEDDINGS: list = []
+_CACHE_ANSWERS:    list = []
+_CACHE_THRESHOLD   = 0.92
 
 def _cache_lookup(query: str) -> str | None:
     if not _CACHE_EMBEDDINGS:
@@ -205,17 +224,33 @@ def classify_intent(query: str) -> str:
 
 
 # ════════════════════════════════════════════════════════════
-# TẦNG 2 — FUZZY LOOKUP (không dùng LLM)
+# TẦNG 2 — FUZZY LOOKUP
+# PATCH: match trên disease_name + synonyms từ chunks_by_disease
+# Trả về list[chunk] của bệnh khớp thay vì 1 doc
 # ════════════════════════════════════════════════════════════
-def fuzzy_lookup(query: str, kb: list) -> dict | None:
+
+# PATCH: Map intent → chunk label để ưu tiên chunk đúng chủ đề
+INTENT_TO_LABEL = {
+    "symptom":    "symptoms",
+    "treatment":  "treatment",
+    "prevention": "prevention",
+    "cause":      "causes",
+    "general":    "overview",
+}
+
+def fuzzy_lookup(query: str, kb: list) -> list[dict] | None:
     """
-    Tìm tên bệnh trực tiếp từ query bằng fuzzy match.
-    Không gọi LLM — zero API call.
+    PATCH: Tìm tên bệnh bằng fuzzy match.
+    Trả về list tất cả chunks của bệnh đó (thay vì 1 doc).
+    kb vẫn nhận vào để giữ nguyên signature gọi từ pipeline,
+    nhưng thực tế dùng chunks_by_disease đã group sẵn.
     """
     q_norm = normalize_text(query)
-    best_doc, best_score = None, 0
-    for doc in kb:
-        candidates = [doc.get("main_name", "")] + doc.get("synonyms", [])
+    best_disease, best_score = None, 0
+
+    for disease_name, disease_chunks in chunks_by_disease.items():
+        # Lấy synonyms từ chunk đầu tiên (tất cả chunks cùng bệnh có synonyms như nhau)
+        candidates = [disease_name] + disease_chunks[0].get("synonyms", [])
         for cand in candidates:
             cand_norm = normalize_text(cand)
             if len(cand_norm) < 3:
@@ -223,14 +258,18 @@ def fuzzy_lookup(query: str, kb: list) -> dict | None:
             score     = fuzz.token_set_ratio(q_norm, cand_norm)
             threshold = 92 if len(cand_norm) <= 5 else config.FUZZY_THRESHOLD
             if score > best_score and score >= threshold:
-                best_score, best_doc = score, doc
-    if best_doc:
-        logger.info(f"Fuzzy: {query!r} → {best_doc.get('main_name')} (score={best_score})")
-    return best_doc
+                best_score, best_disease = score, disease_name
+
+    if best_disease:
+        logger.info(f"Fuzzy: {query!r} → {best_disease} (score={best_score})")
+        return chunks_by_disease[best_disease]  # trả về list chunks
+
+    return None
 
 
 # ════════════════════════════════════════════════════════════
 # TẦNG 3 — HYBRID RETRIEVAL (FAISS + BM25)
+# PATCH: Trả về list of chunks (không đổi nhiều, id2doc giờ là id2chunk)
 # ════════════════════════════════════════════════════════════
 def hybrid_retrieve(query: str, top_k: int = None, alpha: float = 0.6) -> list:
     top_k        = top_k or config.TOP_K
@@ -248,13 +287,42 @@ def hybrid_retrieve(query: str, top_k: int = None, alpha: float = 0.6) -> list:
     combined    = alpha * faiss_scores + (1 - alpha) * bm25_norm
     top_indices = np.argsort(combined)[::-1][:top_k]
     results     = [id2doc[i] for i in top_indices if combined[i] > 0.01 and i in id2doc]
-    logger.info(f"Hybrid retrieve: {[d.get('main_name') for d in results]}")
+    logger.info(f"Hybrid retrieve chunks: {[d.get('chunk_id') for d in results]}")
     return results
 
 
 # ════════════════════════════════════════════════════════════
+# PREPARE CONTEXT
+# PATCH: Build context từ chunks, ưu tiên chunk đúng intent
+# ════════════════════════════════════════════════════════════
+def prepare_context(chunks: list, intent: str = "general") -> str:
+    """
+    PATCH: Nhận list of chunks, sort theo intent rồi build context.
+    Chunk đúng label với intent được đặt lên đầu.
+    Dùng chunk["text"] + chunk["label_vi"] thay vì knowledge_text.
+    """
+    target_label = INTENT_TO_LABEL.get(intent, "overview")
+
+    # Tách chunk đúng intent và chunk còn lại
+    priority_chunks = [c for c in chunks if c.get("label") == target_label]
+    other_chunks    = [c for c in chunks if c.get("label") != target_label]
+
+    # Sắp xếp: đúng intent trước, còn lại sau (giữ thứ tự tự nhiên)
+    sorted_chunks = priority_chunks + other_chunks
+
+    parts = []
+    for c in sorted_chunks:
+        label_vi     = c.get("label_vi", "")
+        disease_name = c.get("disease_name", "")
+        text         = c.get("text", "")
+        parts.append(f"[{disease_name} — {label_vi}]\n{text}")
+
+    context_text = "\n\n".join(parts)
+    return context_text[:config.CONTEXT_CHAR_LIMIT]
+
+
+# ════════════════════════════════════════════════════════════
 # TẦNG 4 — SINGLE LLM CALL với intent-aware prompt
-# (entity extraction + answering gộp lại 1 call duy nhất)
 # ════════════════════════════════════════════════════════════
 SYSTEM_PROMPT = """You are MediChat, a professional medical information assistant.
 
@@ -372,16 +440,7 @@ End with: "⚕️ Lưu ý: Thông tin chỉ mang tính tham khảo. Vui lòng th
 }
 
 
-def prepare_context(docs: list) -> str:
-    """Truncate trực tiếp — không gọi LLM để summarize."""
-    context_text = "\n\n".join(
-        f"[{d.get('main_name','')}]\n{d.get('knowledge_text','')}" for d in docs
-    )
-    return context_text[:config.CONTEXT_CHAR_LIMIT]
-
-
 def build_prompt(query: str, context: str, lang_mode: str, intent: str) -> tuple[str, str]:
-    """Trả về (system_prompt, user_prompt)."""
     template         = PROMPT_TEMPLATES.get(intent, PROMPT_TEMPLATES["general"])
     lang_instruction = LANG_MAP.get(lang_mode, LANG_MAP["Auto"])
     user_prompt      = template.format(
@@ -393,56 +452,8 @@ def build_prompt(query: str, context: str, lang_mode: str, intent: str) -> tuple
 
 
 # ════════════════════════════════════════════════════════════
-# STREAMING
-# ════════════════════════════════════════════════════════════
-def stream_answer(system_prompt: str, user_prompt: str):
-    """
-    Generator: yield từng token từ Groq streaming API.
-    Format: Server-Sent Events (SSE) để frontend nhận dễ.
-    """
-    full_text = []
-    try:
-        stream = client.chat.completions.create(
-            model=config.GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": user_prompt},
-            ],
-            max_tokens=config.MAX_TOKENS_ANSWER,
-            temperature=0.2,
-            stream=True,
-        )
-        for chunk in stream:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                full_text.append(delta)
-                yield f"data: {json.dumps({'token': delta})}\n\n"
-
-        # Lưu cache sau khi stream xong
-        yield f"data: {json.dumps({'done': True})}\n\n"
-        return "".join(full_text)
-
-    except Exception as e:
-        logger.error(f"Stream error: {e}")
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
-
-
-def ask_llama_sync(system_prompt: str, user_prompt: str) -> str:
-    """Non-streaming call — dùng cho cache store sau khi stream xong."""
-    resp = client.chat.completions.create(
-        model=config.GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_prompt},
-        ],
-        max_tokens=config.MAX_TOKENS_ANSWER,
-        temperature=0.2,
-    )
-    return resp.choices[0].message.content
-
-
-# ════════════════════════════════════════════════════════════
 # MAIN PIPELINE
+# PATCH: process_query_stream dùng chunks thay vì docs
 # ════════════════════════════════════════════════════════════
 STOPWORDS = {
     "trieu chung", "dau hieu", "benh", "thuoc",
@@ -453,6 +464,8 @@ def process_query_stream(user_query: str, lang_mode: str = "Auto"):
     """
     Generator pipeline — stream tokens về frontend.
     Query → Cache? → Intent → Fuzzy → Hybrid Retrieve → 1 LLM call (stream)
+    
+    PATCH: fuzzy_lookup trả về list[chunk], prepare_context nhận intent
     """
     t0 = time.time()
 
@@ -467,29 +480,44 @@ def process_query_stream(user_query: str, lang_mode: str = "Auto"):
     # 1. Intent (0 API call)
     intent = classify_intent(user_query)
 
-    # 2. Fuzzy lookup (0 API call) — thay thế extract_entity_llm
-    doc = fuzzy_lookup(user_query, full_data)
+    # 2. Fuzzy lookup (0 API call)
+    # PATCH: trả về list[chunk] hoặc None
+    disease_chunks = fuzzy_lookup(user_query, full_data)
 
-    if doc:
-        related  = hybrid_retrieve(user_query, top_k=2)
-        all_docs = [doc] + [d for d in related if d.get("main_name") != doc.get("main_name")]
-        context  = prepare_context(all_docs[:3])
+    if disease_chunks:
+        # Fuzzy match thành công → lấy chunks của bệnh đó
+        # + bổ sung thêm chunks liên quan từ hybrid retrieve
+        related_chunks = hybrid_retrieve(user_query, top_k=3)
+        matched_disease = disease_chunks[0]["disease_name"]
+
+        # Loại bỏ chunks trùng disease đã có từ fuzzy
+        extra_chunks = [
+            c for c in related_chunks
+            if c.get("disease_name") != matched_disease
+        ]
+
+        all_chunks = disease_chunks + extra_chunks
+        context    = prepare_context(all_chunks, intent)
+
     else:
         # 3. Hybrid retrieval fallback
-        suggestions = hybrid_retrieve(user_query, top_k=config.TOP_K)
+        retrieved_chunks = hybrid_retrieve(user_query, top_k=config.TOP_K)
 
-        if not suggestions:
+        if not retrieved_chunks:
             yield f"data: {json.dumps({'token': 'Xin lỗi, không tìm thấy thông tin phù hợp.'})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
 
-        # Nếu nhiều kết quả không rõ → trả suggestions (không stream)
-        if len(suggestions) > 1 and not doc:
-            sug_names = [d.get("main_name", "") for d in suggestions]
-            yield f"data: {json.dumps({'suggestions': sug_names})}\n\n"
+        # PATCH: Group theo disease để check suggestions
+        diseases_found = list(dict.fromkeys(
+            c["disease_name"] for c in retrieved_chunks
+        ))
+
+        if len(diseases_found) > 1:
+            yield f"data: {json.dumps({'suggestions': diseases_found})}\n\n"
             return
 
-        context = prepare_context(suggestions)
+        context = prepare_context(retrieved_chunks, intent)
 
     # 4. Single LLM call — stream
     system_prompt, user_prompt = build_prompt(user_query, context, lang_mode, intent)
@@ -516,7 +544,6 @@ def process_query_stream(user_query: str, lang_mode: str = "Auto"):
         answer = "".join(full_text)
         logger.info(f"Done in {time.time()-t0:.3f}s | {len(answer)} chars")
 
-        # Lưu vào semantic cache
         _cache_store(user_query, answer)
         yield f"data: {json.dumps({'done': True, 'cached': False})}\n\n"
 

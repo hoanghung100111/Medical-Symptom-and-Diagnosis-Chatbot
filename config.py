@@ -10,12 +10,12 @@ GROQ_MODEL          = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 # ── Embedding ────────────────────────────────────────────────
 EMBED_MODEL         = os.getenv(
     "EMBED_MODEL",
-    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    "intfloat/multilingual-e5-base"
 )
 
 # ── Data paths ───────────────────────────────────────────────
 FAISS_INDEX_PATH    = os.getenv("FAISS_INDEX_PATH", "medical_index.faiss")
-KNOWLEDGE_PATH      = os.getenv("KNOWLEDGE_PATH",   "chatbot_knowledge_updated.json")
+KNOWLEDGE_PATH      = os.getenv("KNOWLEDGE_PATH",   "chatbot_knowledge_chunked.json")
 
 # ── RAG params ───────────────────────────────────────────────
 TOP_K               = int(os.getenv("TOP_K",                "3"))
@@ -31,5 +31,3 @@ FUZZY_THRESHOLD     = int(os.getenv("FUZZY_THRESHOLD",      "70"))
 FLASK_SECRET_KEY    = os.getenv("FLASK_SECRET_KEY", "dev-secret-key")
 FLASK_ENV           = os.getenv("FLASK_ENV",         "development")
 FLASK_PORT          = int(os.getenv("FLASK_PORT",    "5000"))
-
-
